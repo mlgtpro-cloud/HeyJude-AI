@@ -1,0 +1,8 @@
+flask
+requests
+python-dotenv
+pypdf
+python-docx
+ddgs
+tzdata
+gunicorn; platform_system != "Windows"

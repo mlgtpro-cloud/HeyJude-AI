@@ -1,0 +1,1000 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HeyJude AI</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.11/katex.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.11/katex.min.js"></script>
+<style>
+  :root {
+    --bg: #f2f4f6;
+    --panel: #ffffff;
+    --ink: #17212b;
+    --muted: #5b6876;
+    --line: #dde2e8;
+    --accent: #0f766e;
+    --accent-ink: #ffffff;
+    --code-bg: #eef1f4;
+    --error: #b42318;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12171c;
+      --panel: #1a2128;
+      --ink: #e6ebf0;
+      --muted: #94a1ae;
+      --line: #2b343d;
+      --accent: #2ab3a6;
+      --accent-ink: #06201d;
+      --code-bg: #232c35;
+      --error: #f97066;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; overflow: hidden; }  /* the app fits the window; only the chat and the library scroll */
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "IBM Plex Sans", system-ui, sans-serif;
+    font-size: 16px;
+    line-height: 1.6;
+    display: flex;
+    flex-direction: column;
+  }
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--line);
+    background: var(--panel);
+  }
+  header h1 { font-size: 17px; font-weight: 600; margin: 0 0 0 6px; letter-spacing: -0.01em; }
+  header .model { font-family: "IBM Plex Mono", monospace; font-size: 12.5px; color: var(--muted); }
+  .head-left { display: flex; align-items: center; gap: 10px; }
+  .clock { font-size: 14px; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  @media (max-width: 700px) { .clock { display: none; } }
+  .head-right { display: flex; align-items: center; gap: 16px; }
+  .agent { display: flex; align-items: center; gap: 7px; font-size: 14px; cursor: pointer; user-select: none; }
+  .agent input { accent-color: var(--accent); width: 16px; height: 16px; cursor: pointer; }
+  .mode select {
+    background: var(--panel); color: var(--ink); border: 1px solid var(--line);
+    border-radius: 8px; padding: 5px 8px; font: inherit; font-size: 14px; cursor: pointer;
+  }
+  .mode select:hover { border-color: var(--accent); }
+  #newHead { display: none; }
+  body.lib-closed #newHead { display: inline-block; }
+  button { font: inherit; cursor: pointer; }
+  .ghost {
+    background: none; border: 1px solid var(--line); color: var(--ink);
+    border-radius: 8px; padding: 6px 12px; font-size: 14px;
+  }
+  .ghost:hover { border-color: var(--accent); }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  body.busy #new, body.busy #newHead { opacity: 0.5; cursor: not-allowed; }
+
+  .layout { flex: 1; display: flex; min-height: 0; }
+  .chat { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+  main { flex: 1; overflow-y: auto; padding: 24px 16px; position: relative; }  /* position: keeps hidden formula parts inside the scroll area */
+  .wrap { max-width: 900px; margin: 0 auto; }
+
+  /* ---------- library (left sidebar) ---------- */
+  aside {
+    width: 280px; flex: none; display: flex; flex-direction: column; min-height: 0;
+    border-right: 1px solid var(--line); background: var(--panel);
+  }
+  body.lib-closed aside { display: none; }
+  .lib-top { padding: 12px 12px 4px; }
+  .newbtn {
+    width: 100%; text-align: left; background: none; color: var(--ink);
+    border: 1px solid var(--line); border-radius: 10px; padding: 9px 14px; font-weight: 500;
+  }
+  .newbtn:hover { border-color: var(--accent); color: var(--accent); }
+  .lib-head {
+    padding: 14px 16px; border-bottom: 1px solid var(--line);
+    display: flex; justify-content: space-between; align-items: center; font-weight: 600;
+  }
+  .lib-head small { color: var(--muted); font-weight: 400; font-size: 13px; }
+  #libList { flex: 1; overflow-y: auto; padding: 8px; }
+  .lib-empty { color: var(--muted); font-size: 14px; padding: 12px 8px; }
+  .lib-item { display: flex; align-items: center; border-radius: 8px; border: 1px solid transparent; }
+  .lib-item:hover { background: var(--code-bg); }
+  .lib-item.active { border-color: var(--accent); background: var(--code-bg); }
+  .lib-open {
+    flex: 1; min-width: 0; text-align: left; background: none; border: 0;
+    color: var(--ink); padding: 8px 10px;
+  }
+  .lib-open b { display: block; font-weight: 500; font-size: 14.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .lib-open small { color: var(--muted); font-size: 12px; }
+  .lib-edit { background: none; border: 0; color: var(--muted); font-size: 15px; line-height: 1; padding: 6px 7px; border-radius: 6px; }
+  .lib-edit:hover { color: var(--accent); }
+  .lib-rename {
+    flex: 1; min-width: 0; margin: 5px 4px 5px 6px; padding: 6px 8px; border: 1px solid var(--accent);
+    border-radius: 6px; background: var(--bg); color: var(--ink); font: inherit; font-size: 14.5px; outline: none;
+  }
+  .lib-del { background: none; border: 0; color: var(--muted); font-size: 18px; line-height: 1; padding: 6px 10px; border-radius: 6px; }
+  .lib-del:hover { color: var(--error); }
+  body.busy .lib-open { opacity: 0.5; cursor: not-allowed; }
+  @media (max-width: 800px) {
+    aside {
+      position: fixed; left: 0; top: 0; bottom: 0; z-index: 5; width: min(300px, 85vw);
+      box-shadow: 8px 0 24px rgba(0, 0, 0, 0.25);
+    }
+  }
+
+  .empty { padding: 12vh 0 0; }
+  .empty h2 { font-size: 30px; font-weight: 600; letter-spacing: -0.02em; margin: 0 0 6px; }
+  .empty p { color: var(--muted); margin: 0 0 22px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 10px; }
+  .chip {
+    background: var(--panel); border: 1px solid var(--line); color: var(--ink);
+    border-radius: 999px; padding: 8px 16px; font-size: 14.5px;
+  }
+  .chip:hover { border-color: var(--accent); }
+
+  .msg { margin: 0 0 22px; display: flex; }
+  .msg.user { justify-content: flex-end; }
+  .msg.user .body {
+    background: var(--accent); color: var(--accent-ink);
+    padding: 9px 15px; border-radius: 16px 16px 4px 16px;
+    max-width: 85%; white-space: pre-wrap; overflow-wrap: anywhere;
+  }
+  .msg.user .body img { display: block; max-width: 240px; max-height: 240px; border-radius: 8px; margin-bottom: 8px; }
+  .msg.user .body .filetag { font-size: 13px; opacity: 0.85; margin-bottom: 4px; }
+  .msg.assistant .body { max-width: 100%; overflow-wrap: anywhere; }
+  .body.error { color: var(--error); }
+  .body > :first-child { margin-top: 0; }
+  .body > :last-child { margin-bottom: 0; }
+  .body p, .body ul, .body ol { margin: 0 0 12px; }
+  .body pre {
+    background: var(--code-bg); border: 1px solid var(--line);
+    border-radius: 8px; padding: 12px 14px; overflow-x: auto; margin: 0 0 12px;
+  }
+  .body code { font-family: "IBM Plex Mono", monospace; font-size: 13.5px; }
+  .body :not(pre) > code { background: var(--code-bg); padding: 1px 5px; border-radius: 4px; }
+  .body a { color: var(--accent); text-underline-offset: 2px; }
+  .body a:visited { color: var(--accent); }
+  .table-wrap { overflow-x: auto; margin: 0 0 16px; border: 1px solid var(--line); border-radius: 10px; }
+  .table-wrap table { border-collapse: collapse; width: 100%; font-size: 14.5px; line-height: 1.5; margin: 0; }
+  /* words are never cut in the middle: a column stays as wide as its longest word, the table scrolls if needed */
+  .body th, .body td {
+    padding: 10px 14px; text-align: left; vertical-align: top; border: 0;
+    border-bottom: 1px solid var(--line); overflow-wrap: normal; word-break: normal;
+  }
+  .body th { background: var(--code-bg); font-weight: 600; font-size: 13.5px; }
+  .body tbody tr:last-child td { border-bottom: 0; }
+  .body tbody tr:nth-child(even) { background: var(--code-bg); }
+  .body th.nowrap, .body td.nowrap { white-space: nowrap; }
+  .body a.urllink { display: inline-block; max-width: 26ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
+  .body h1, .body h2, .body h3 { font-size: 18px; margin: 18px 0 10px; }
+  .tool { margin: 0 0 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); font-size: 14px; }
+  .tool summary { cursor: pointer; padding: 8px 12px; color: var(--muted); list-style: none; }
+  .tool summary::-webkit-details-marker { display: none; }
+  .tool summary::before { content: "▸ "; }
+  .tool[open] summary::before { content: "▾ "; }
+  .tool.running summary::after { content: " …"; }
+  .tool-body {
+    padding: 0 12px 10px; font-family: "IBM Plex Mono", monospace; font-size: 12.5px;
+    white-space: pre-wrap; overflow-wrap: anywhere; color: var(--ink);
+  }
+  .stage { margin: 0 0 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+  .stage > summary { cursor: pointer; padding: 9px 14px; font-weight: 500; list-style: none; }
+  .stage > summary::-webkit-details-marker { display: none; }
+  .stage > summary::before { content: "▸ "; color: var(--muted); }
+  .stage[open] > summary::before { content: "▾ "; }
+  .stage-body { padding: 10px 14px 4px; border-top: 1px solid var(--line); font-size: 14.5px; }
+  .activity { margin: 0 0 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); font-size: 14px; }
+  .activity > summary { cursor: pointer; padding: 8px 12px; color: var(--muted); list-style: none; }
+  .activity > summary::-webkit-details-marker { display: none; }
+  .activity > summary::before { content: "▸ "; }
+  .activity[open] > summary::before { content: "▾ "; }
+  .activity-body { padding: 12px 12px 2px; border-top: 1px solid var(--line); }
+  .stage-line { margin: 0 0 12px; font-weight: 500; color: var(--muted); font-size: 14.5px; }
+  .error-box { margin: 10px 0 0; padding: 10px 14px; border: 1px solid var(--error); border-radius: 10px; color: var(--error); font-size: 14.5px; overflow-wrap: anywhere; }
+  .error-box .ghost { margin-top: 8px; color: var(--ink); display: block; }
+  .route-line { margin: 0 0 8px; font-size: 13px; color: var(--muted); }
+  .status-line { color: var(--muted); font-size: 14px; font-style: italic; }
+  .body .katex-display { margin: 0.9em 0; overflow-x: auto; overflow-y: hidden; }
+  .body .katex { font-size: 1.05em; }
+  .dots::after { content: "…"; color: var(--muted); }
+
+  footer { padding: 12px 16px 18px; background: var(--bg); }
+  #preview { max-width: 900px; margin: 0 auto 8px; display: flex; }
+  #preview:empty { display: none; }
+  .pill {
+    display: flex; align-items: center; gap: 8px; max-width: 100%;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+    padding: 5px 6px; font-size: 13.5px;
+  }
+  .pill img { width: 36px; height: 36px; object-fit: cover; border-radius: 6px; }
+  .pill span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pill button { background: none; border: 0; color: var(--muted); font-size: 18px; line-height: 1; padding: 0 6px; }
+  .pill button:hover { color: var(--error); }
+
+  form {
+    max-width: 900px; margin: 0 auto; display: flex; gap: 8px; align-items: flex-end;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 8px;
+  }
+  form:focus-within { border-color: var(--accent); }
+  .attach {
+    background: none; border: 0; color: var(--muted); font-size: 24px; line-height: 1;
+    padding: 6px 10px; border-radius: 8px;
+  }
+  .attach:hover { color: var(--accent); }
+  textarea {
+    flex: 1; border: 0; outline: 0; resize: none; background: transparent; color: var(--ink);
+    font: inherit; max-height: 160px; padding: 6px 0;
+  }
+  textarea::placeholder { color: var(--muted); }
+  .send {
+    background: var(--accent); color: var(--accent-ink); border: 0; border-radius: 10px;
+    padding: 9px 18px; font-weight: 500; min-width: 72px;
+  }
+  .send.stop { background: var(--ink); color: var(--bg); }
+  @media (max-width: 520px) { .empty h2 { font-size: 24px; } header .model { display: none; } }
+</style>
+</head>
+<body>
+  <header>
+    <div class="head-left">
+      <button class="ghost" id="libToggle" type="button">Library</button>
+      <button class="ghost" id="newHead" type="button">New chat</button>
+      <h1>HeyJude AI</h1>
+    </div>
+    <div class="head-right">
+      <span class="clock" id="clock"></span>
+      <label class="mode" title="Auto: the AI picks the best mode for each message. Chat, Agent and Multi-agent force one mode.">
+        <select id="mode" aria-label="Mode">
+          <option value="auto">Auto</option>
+          <option value="chat">Chat</option>
+          <option value="agent">Agent</option>
+          <option value="multi">Multi-agent</option>
+        </select>
+      </label>
+      <span class="model">{{ model }}</span>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside id="library" aria-label="Chat library">
+      <div class="lib-top"><button class="newbtn" id="new" type="button">+ New chat</button></div>
+      <div class="lib-head"><span>Library</span><small id="libCount"></small></div>
+      <div id="libList"></div>
+    </aside>
+    <div class="chat">
+      <main id="scroll">
+        <div class="wrap">
+          <section class="empty" id="empty">
+            <h2 id="greet">Hello</h2>
+            <p>What can I help with today? Ask anything, attach a file, or pick a starter.</p>
+            <div class="chips">
+              <button class="chip" type="button" data-fill="Explain this in simple words: ">Explain something</button>
+              <button class="chip" type="button" data-fill="Help me with this code: ">Help with code</button>
+              <button class="chip" type="button" data-fill="Make a study plan for: ">Make a study plan</button>
+              <button class="chip" type="button" data-fill="Research and compare: ">Research a topic</button>
+            </div>
+          </section>
+          <div id="log"></div>
+        </div>
+      </main>
+
+      <footer>
+        <div id="preview"></div>
+        <form id="form">
+          <button class="attach" id="attach" type="button" aria-label="Attach a file or photo" title="Attach a file or photo">+</button>
+          <input type="file" id="file" hidden
+            accept="image/*,.pdf,.docx,.txt,.md,.py,.js,.ts,.json,.csv,.html,.css,.java,.c,.cpp,.cs,.kt,.sql,.xml,.yml,.yaml,.log">
+          <textarea id="input" rows="1" placeholder="Type a message" aria-label="Message"></textarea>
+          <button class="send" id="send" type="submit">Send</button>
+        </form>
+      </footer>
+    </div>
+
+  </div>
+
+<script>
+  const log = document.getElementById('log');
+  const scroller = document.getElementById('scroll');
+  const empty = document.getElementById('empty');
+  const form = document.getElementById('form');
+  const input = document.getElementById('input');
+  const sendBtn = document.getElementById('send');
+  const attachBtn = document.getElementById('attach');
+  const fileInput = document.getElementById('file');
+  const preview = document.getElementById('preview');
+  const libList = document.getElementById('libList');
+  const libCount = document.getElementById('libCount');
+  const modeSel = document.getElementById('mode');
+  const greet = document.getElementById('greet');
+  const clockEl = document.getElementById('clock');
+  const USER_NAME = {{ user_name|tojson }};
+  const FILE_CHARS = {{ file_chars }};  // how much of an attached file is sent (set MAX_FILE_CHARS in .env)  // optional, set USER_NAME in .env
+
+  const LIB_KEY = 'chatbot_library_v1';
+  const MAX_SAVED = 50;
+
+  let history = [];   // what is sent to the AI
+  let shown = [];     // what is displayed: { role, text, attType, attName }
+  let chatId = null;
+  let busy = false;
+  let controller = null;
+  let attach = null;  // { type: 'image', name, dataUrl } or { type: 'file', name, text }
+
+  if (window.innerWidth < 900) document.body.classList.add('lib-closed');
+
+  const PLACEHOLDERS = {
+    auto: 'Type a message',
+    chat: 'Type a message',
+    agent: 'Type a message (the AI can use tools)',
+    multi: 'Ask anything: the main LLM will pick which agents to run'
+  };
+  function setMode(m) {
+    if (!PLACEHOLDERS[m]) m = 'auto';
+    modeSel.value = m;
+    input.placeholder = PLACEHOLDERS[m];
+    try { localStorage.setItem('chatbot_mode2', m); } catch (e) { /* ignore */ }
+  }
+  let savedMode = 'auto';
+  try { savedMode = localStorage.getItem('chatbot_mode2') || 'auto'; } catch (e) { /* ignore */ }
+  setMode(savedMode);
+  modeSel.addEventListener('change', () => setMode(modeSel.value));
+
+  /* ---------- greeting and clock (uses your computer's time) ---------- */
+  function greetingFor(d) {
+    const h = d.getHours();
+    const base = h >= 5 && h < 12 ? 'Good morning' : h >= 12 && h < 18 ? 'Good afternoon'
+               : h >= 18 && h < 22 ? 'Good evening' : 'Hello';
+    return USER_NAME ? base + ', ' + USER_NAME : base;
+  }
+  function tick() {
+    const now = new Date();
+    clockEl.textContent =
+      now.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' }) + ' · ' +
+      now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    greet.textContent = greetingFor(now);
+  }
+  tick();
+  setInterval(tick, 1000);
+
+  /* ---------- attachments ---------- */
+  function imageToDataUrl(file) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => {
+        const max = 1024;  // smaller pictures cost fewer tokens
+        const s = Math.min(1, max / Math.max(img.width, img.height));
+        const c = document.createElement('canvas');
+        c.width = Math.round(img.width * s);
+        c.height = Math.round(img.height * s);
+        const ctx = c.getContext('2d');
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(0, 0, c.width, c.height);
+        ctx.drawImage(img, 0, 0, c.width, c.height);
+        URL.revokeObjectURL(url);
+        resolve(c.toDataURL('image/jpeg', 0.8));
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Could not read that image.')); };
+      img.src = url;
+    });
+  }
+
+  async function readAttachment(file) {
+    if (file.type.startsWith('image/')) {
+      return { type: 'image', name: file.name, dataUrl: await imageToDataUrl(file) };
+    }
+    const lower = file.name.toLowerCase();
+    if (lower.endsWith('.pdf') || lower.endsWith('.docx')) {
+      const fd = new FormData();
+      fd.append('file', file);
+      const res = await fetch('/api/extract', { method: 'POST', body: fd });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(out.error || 'Could not read that file.');
+      return { type: 'file', name: file.name + (out.truncated ? ' (first ' + out.limit.toLocaleString() + ' characters)' : ''), text: out.text };
+    }
+    if (file.size > 200 * 1024) throw new Error('File is too big (max 200 KB).');
+    const text = await file.text();
+    if (text.includes('\u0000')) throw new Error('Only text or code files are supported.');
+    return { type: 'file', name: file.name + (text.length > FILE_CHARS ? ' (first ' + FILE_CHARS.toLocaleString() + ' characters)' : ''), text: text.slice(0, FILE_CHARS) };
+  }
+
+  function showPreview() {
+    preview.innerHTML = '';
+    if (!attach) return;
+    const pill = document.createElement('div');
+    pill.className = 'pill';
+    if (attach.type === 'image') {
+      const im = document.createElement('img');
+      im.src = attach.dataUrl;
+      pill.appendChild(im);
+    }
+    const label = document.createElement('span');
+    label.textContent = attach.name;
+    const x = document.createElement('button');
+    x.type = 'button';
+    x.textContent = '×';
+    x.setAttribute('aria-label', 'Remove attachment');
+    x.onclick = () => { attach = null; showPreview(); };
+    pill.append(label, x);
+    preview.appendChild(pill);
+  }
+
+  attachBtn.addEventListener('click', () => fileInput.click());
+  fileInput.addEventListener('change', async () => {
+    const f = fileInput.files[0];
+    fileInput.value = '';
+    if (!f) return;
+    try {
+      attach = await readAttachment(f);
+      showPreview();
+    } catch (e) {
+      alert(e.message);
+    }
+  });
+
+  /* ---------- rendering ---------- */
+  function addMsg(role) {
+    const el = document.createElement('div');
+    el.className = 'msg ' + role;
+    const body = document.createElement('div');
+    body.className = 'body';
+    el.appendChild(body);
+    log.appendChild(el);
+    return body;
+  }
+
+  function renderUser(body, text, att) {
+    body.textContent = '';
+    if (att && att.type === 'image') {
+      if (att.dataUrl) {
+        const im = document.createElement('img');
+        im.src = att.dataUrl;
+        body.appendChild(im);
+      } else {
+        const tag = document.createElement('div');
+        tag.className = 'filetag';
+        tag.textContent = 'Image: ' + att.name;
+        body.appendChild(tag);
+      }
+    }
+    if (att && att.type === 'file') {
+      const tag = document.createElement('div');
+      tag.className = 'filetag';
+      tag.textContent = 'Attached: ' + att.name;
+      body.appendChild(tag);
+    }
+    if (text) body.appendChild(document.createTextNode(text));
+  }
+
+  function escapeHtml(s) {
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  // markdown -> safe HTML, with LaTeX maths ($..$, $$..$$, \(..\), \[..\]) drawn by KaTeX.
+  // Maths is set aside first so markdown cannot damage it (underscores, backslashes), and code is left alone.
+  function renderMarkdown(text) {
+    text = text.replace(/【\d+†[^】]*】/g, '');  // the model sometimes leaves citation markers like 【3†L1-L9】
+    const math = [];
+    const stash = (expr, display) => { math.push({ expr, display }); return 'MATHPH' + (math.length - 1) + 'END'; };
+    const prepared = text.split(/(```[\s\S]*?```|`[^`\n]+`)/g).map((seg, i) => {
+      if (i % 2 === 1) return seg;  // a code piece: keep as it is
+      return seg
+        .replace(/\$\$([\s\S]+?)\$\$/g, (m, e) => stash(e, true))
+        .replace(/\\\[([\s\S]+?)\\\]/g, (m, e) => stash(e, true))
+        .replace(/\\\(([\s\S]+?)\\\)/g, (m, e) => stash(e, false))
+        .replace(/\$(?!\s)([^$\n]+?)(?<!\s)\$(?!\d)/g, (m, e) => stash(e, false));
+    }).join('');
+    let html = DOMPurify.sanitize(marked.parse(prepared));
+    if (math.length) {
+      html = html.replace(/MATHPH(\d+)END/g, (m, i) => {
+        const { expr, display } = math[+i];
+        if (typeof katex === 'undefined') return escapeHtml(display ? '$$' + expr + '$$' : '$' + expr + '$');
+        try { return katex.renderToString(expr, { displayMode: display, throwOnError: false }); }
+        catch (e) { return escapeHtml(expr); }
+      });
+    }
+    return html;
+  }
+
+  function polish(root) {
+    root.querySelectorAll('table').forEach((t) => {
+      const wrap = document.createElement('div');
+      wrap.className = 'table-wrap';
+      t.parentNode.insertBefore(wrap, t);
+      wrap.appendChild(t);
+    });
+    root.querySelectorAll('td, th').forEach((c) => {
+      if (c.textContent.trim().length <= 16) c.classList.add('nowrap');  // short values like "RM380" stay on one line
+    });
+    root.querySelectorAll('a').forEach((a) => {
+      a.target = '_blank';  // links open in a new tab so the chat stays open
+      a.rel = 'noopener noreferrer';
+      if (/^https?:\/\//.test(a.textContent.trim()) && a.closest('td, th')) {
+        a.classList.add('urllink');  // a long raw URL inside a table is shortened with ...
+        a.title = a.href;
+      }
+    });
+  }
+
+  const ROUTE_LABELS = { chat: 'Chat', agent: 'Agent', multi: 'Multi-agent' };
+  const TOOL_LABELS = {
+    calculator: 'calculator', get_current_datetime: 'date and time', web_search: 'web search',
+    fetch_webpage: 'web page reader', get_weather: 'weather', flight_links: 'flight links',
+    hotel_links: 'hotel links'
+  };
+
+  // an assistant message is a list of parts: text blocks, tool steps and agent stages, in order
+  function renderItems(container, items) {
+    items.forEach((p) => {
+      if (p.type === 'text') {
+        const div = document.createElement('div');
+        div.innerHTML = renderMarkdown(p.text);
+        polish(div);
+        container.appendChild(div);
+      } else if (p.type === 'route') {
+        const r = document.createElement('div');
+        r.className = 'route-line';
+        r.textContent = 'Auto: ' + (ROUTE_LABELS[p.mode] || p.mode) + (p.reason ? ' · ' + p.reason : '');
+        container.appendChild(r);
+      } else if (p.type === 'tool') {
+        const d = document.createElement('details');
+        d.className = 'tool' + (p.result == null ? ' running' : '');
+        d.open = !!p.open;
+        d.addEventListener('toggle', () => { p.open = d.open; });
+        const s = document.createElement('summary');
+        s.textContent = (p.result == null ? 'Using ' : 'Used ') + (TOOL_LABELS[p.name] || p.name);
+        const b = document.createElement('div');
+        b.className = 'tool-body';
+        b.textContent = 'Input: ' + p.args + (p.result != null ? '\n\nResult: ' + p.result : '');
+        d.append(s, b);
+        container.appendChild(d);
+      }
+    });
+  }
+
+  function renderStage(container, p) {
+    const mark = p.status === 'done' ? '✓ ' : p.status === 'stopped' ? '■ ' : '';
+    const label = mark + p.name + ' · ' + p.desc + (p.status === 'running' ? ' …' : '');
+    if (p.final) {
+      const line = document.createElement('div');
+      line.className = 'stage-line';
+      line.textContent = label;
+      container.appendChild(line);
+      return;
+    }
+    const d = document.createElement('details');
+    d.className = 'stage';
+    d.open = !!p.open;
+    d.addEventListener('toggle', () => { p.open = d.open; });
+    const s = document.createElement('summary');
+    s.textContent = label;
+    const inner = document.createElement('div');
+    inner.className = 'stage-body';
+    renderItems(inner, p.items);
+    d.append(s, inner);
+    container.appendChild(d);
+  }
+
+  function stepsLabel(parts) {
+    let agents = 0, tools = 0;
+    parts.forEach((p) => {
+      if (p.type === 'tool') tools++;
+      if (p.type === 'stage') {
+        if (!p.final) agents++;
+        tools += p.items.filter((i) => i.type === 'tool').length;
+      }
+    });
+    const bits = [];
+    if (agents) bits.push(agents + (agents > 1 ? ' agents' : ' agent'));
+    if (tools) bits.push(tools + (tools > 1 ? ' tool calls' : ' tool call'));
+    return 'steps' + (bits.length ? ' (' + bits.join(', ') + ')' : '');
+  }
+
+  // while working: show every agent and tool step live.
+  // when finished (finished = true): hide them all inside one collapsed "Show steps" line.
+  function renderParts(body, parts, status, finished) {
+    body.textContent = '';
+    const draw = (container, list) => list.forEach((p) =>
+      p.type === 'stage' ? renderStage(container, p) : renderItems(container, [p]));
+    const steps = parts.filter((p) => p.type === 'stage' || p.type === 'tool');
+    if (finished && steps.length) {
+      renderItems(body, parts.filter((p) => p.type === 'route'));
+      const g = document.createElement('details');
+      g.className = 'activity';
+      g.open = !!parts.activityOpen;
+      const s = document.createElement('summary');
+      const base = stepsLabel(parts);
+      const setLabel = () => { s.textContent = (g.open ? 'Hide ' : 'Show ') + base; };
+      setLabel();
+      g.addEventListener('toggle', () => { parts.activityOpen = g.open; setLabel(); });
+      const inner = document.createElement('div');
+      inner.className = 'activity-body';
+      draw(inner, steps);
+      g.append(s, inner);
+      body.appendChild(g);
+      renderItems(body, parts.filter((p) => p.type === 'text'));
+    } else {
+      draw(body, parts);
+    }
+    if (status) {
+      const st = document.createElement('div');
+      st.className = 'status-line';
+      st.textContent = status;
+      body.appendChild(st);
+    }
+  }
+
+  function toBottom() { scroller.scrollTop = scroller.scrollHeight; }
+
+  function setBusy(on) {
+    busy = on;
+    sendBtn.textContent = on ? 'Stop' : 'Send';
+    sendBtn.classList.toggle('stop', on);
+    document.body.classList.toggle('busy', on);
+  }
+
+  /* ---------- library (saved in this browser with localStorage) ---------- */
+  function loadLib() {
+    try { return JSON.parse(localStorage.getItem(LIB_KEY) || '[]'); } catch (e) { return []; }
+  }
+
+  function saveLib(list) {
+    try {
+      localStorage.setItem(LIB_KEY, JSON.stringify(list));
+    } catch (e) {
+      try { localStorage.setItem(LIB_KEY, JSON.stringify(list.slice(0, 15))); } catch (e2) { /* storage full */ }
+    }
+  }
+
+  // images are not stored (too big); only a text note is kept
+  function stripImages(h) {
+    return h.map((m) => {
+      if (!Array.isArray(m.content)) return m;
+      const t = m.content.filter((p) => p.type === 'text').map((p) => p.text).join('\n');
+      return { role: m.role, content: t + '\n[image attached]' };
+    });
+  }
+
+  function persist() {
+    if (!history.length) return;
+    if (!chatId) chatId = 'c' + Date.now();
+    const first = shown.find((s) => s.role === 'user');
+    const existing = loadLib().find((c) => c.id === chatId);
+    const renamed = !!(existing && existing.renamed);  // a name you typed is never overwritten
+    const title = renamed ? existing.title : ((first && (first.text || first.attName)) || 'Chat').slice(0, 60);
+    const list = loadLib().filter((c) => c.id !== chatId);
+    list.unshift({ id: chatId, title, renamed, ts: Date.now(), history: stripImages(history), shown });
+    saveLib(list.slice(0, MAX_SAVED));
+    renderLibrary();
+  }
+
+  function renderLibrary() {
+    const list = loadLib();
+    libCount.textContent = list.length ? list.length + ' saved' : '';
+    libList.innerHTML = '';
+    if (!list.length) {
+      const e = document.createElement('div');
+      e.className = 'lib-empty';
+      e.textContent = 'Your chats will be saved here automatically.';
+      libList.appendChild(e);
+      return;
+    }
+    list.forEach((c) => {
+      const row = document.createElement('div');
+      row.className = 'lib-item' + (c.id === chatId ? ' active' : '');
+      const open = document.createElement('button');
+      open.type = 'button';
+      open.className = 'lib-open';
+      const b = document.createElement('b');
+      b.textContent = c.title;
+      const s = document.createElement('small');
+      s.textContent = new Date(c.ts).toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+      open.append(b, s);
+      open.onclick = () => restoreChat(c);
+      const edit = document.createElement('button');
+      edit.type = 'button';
+      edit.className = 'lib-edit';
+      edit.textContent = '✎';
+      edit.title = 'Rename';
+      edit.setAttribute('aria-label', 'Rename chat');
+      edit.onclick = () => startRename(c, open);
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'lib-del';
+      del.textContent = '×';
+      del.setAttribute('aria-label', 'Delete chat');
+      del.onclick = () => removeChat(c.id);
+      row.append(open, edit, del);
+      libList.appendChild(row);
+    });
+  }
+
+  function renameChat(id, name) {
+    const t = name.trim().slice(0, 60);
+    if (t) {
+      const list = loadLib();
+      const c = list.find((x) => x.id === id);
+      if (c) { c.title = t; c.renamed = true; saveLib(list); }
+    }
+    renderLibrary();
+  }
+
+  function startRename(c, openBtn) {
+    const inp = document.createElement('input');
+    inp.className = 'lib-rename';
+    inp.value = c.title;
+    inp.maxLength = 60;
+    inp.setAttribute('aria-label', 'Chat name');
+    openBtn.replaceWith(inp);
+    inp.focus();
+    inp.select();
+    let finished = false;
+    const finish = (save) => {
+      if (finished) return;
+      finished = true;
+      if (save) renameChat(c.id, inp.value); else renderLibrary();
+    };
+    inp.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') finish(true);
+      else if (e.key === 'Escape') finish(false);
+    });
+    inp.addEventListener('blur', () => finish(true));
+  }
+
+  function restoreChat(c) {
+    if (busy) return;
+    chatId = c.id;
+    history = c.history.slice();
+    shown = c.shown.slice();
+    attach = null;
+    showPreview();
+    log.innerHTML = '';
+    empty.hidden = true;
+    shown.forEach((s) => {
+      const body = addMsg(s.role);
+      if (s.role === 'user') renderUser(body, s.text, s.attType ? { type: s.attType, name: s.attName } : null);
+      else renderParts(body, s.parts || [{ type: 'text', text: s.text || '' }], '', true);
+    });
+    toBottom();
+    renderLibrary();
+    input.focus();
+  }
+
+  function newChat() {
+    if (busy) return;
+    chatId = null;
+    history = [];
+    shown = [];
+    attach = null;
+    showPreview();
+    log.innerHTML = '';
+    empty.hidden = false;
+    renderLibrary();
+    input.focus();
+  }
+
+  function removeChat(id) {
+    if (busy) return;
+    if (!confirm('Delete this chat from the library?')) return;
+    saveLib(loadLib().filter((c) => c.id !== id));
+    if (id === chatId) newChat(); else renderLibrary();
+  }
+
+  /* ---------- chat ---------- */
+  async function ask(rawText) {
+    const text = rawText.trim();
+    if (busy || (!text && !attach)) return;
+
+    const att = attach;
+    attach = null;
+    showPreview();
+
+    let content;
+    if (att && att.type === 'image') {
+      content = [
+        { type: 'text', text: text || 'Describe this image. If it contains letters or numbers, read them out.' },
+        { type: 'image_url', image_url: { url: att.dataUrl } }
+      ];
+    } else if (att && att.type === 'file') {
+      content = 'File: ' + att.name + '\n```\n' + att.text + '\n```\n\n' + (text || 'Explain this file.');
+    } else {
+      content = text;
+    }
+
+    setBusy(true);
+    empty.hidden = true;
+    history.push({ role: 'user', content });
+    shown.push({ role: 'user', text, attType: att ? att.type : null, attName: att ? att.name : null });
+    renderUser(addMsg('user'), text, att);
+    const body = addMsg('assistant');
+    body.classList.add('dots');
+    toBottom();
+
+    controller = new AbortController();
+    const parts = [];
+    let failed = false;
+    let stopped = false;
+    let errText = '';
+    let gotDone = false;
+    const answerText = () => parts.filter((p) => p.type === 'text').map((p) => p.text).join('\n\n');
+
+    function handle(ev) {
+      if (ev.t === 'status') {
+        renderParts(body, parts, ev.d);
+        return;
+      }
+      body.classList.remove('dots');
+      const stage = ev.s ? parts.find((x) => x.type === 'stage' && x.key === ev.s) : null;
+      const list = stage ? stage.items : parts;
+      if (ev.t === 'text') {
+        const last = list[list.length - 1];
+        if (last && last.type === 'text') last.text += ev.d;
+        else list.push({ type: 'text', text: ev.d });
+      } else if (ev.t === 'tool') {
+        list.push({ type: 'tool', id: ev.id, name: ev.name, args: ev.args || '{}', result: null });
+      } else if (ev.t === 'tool_result') {
+        const p = list.find((x) => x.type === 'tool' && x.id === ev.id);
+        if (p) p.result = ev.result;
+      } else if (ev.t === 'route') {
+        list.push({ type: 'route', mode: ev.mode, reason: ev.reason || '' });
+      } else if (ev.t === 'stage') {
+        if (ev.status === 'start') {
+          parts.push({ type: 'stage', key: ev.key, name: ev.name, desc: ev.desc, final: !!ev.final,
+                       status: 'running', items: [], open: true });
+        } else {
+          const s = parts.find((x) => x.type === 'stage' && x.key === ev.key);
+          if (s) { s.status = 'done'; s.open = false; }
+        }
+      } else if (ev.t === 'error') {
+        failed = true;
+        errText = ev.d;
+      } else if (ev.t === 'done') {
+        gotDone = true;
+      }
+      renderParts(body, parts);
+      toBottom();
+    }
+
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: history, mode: modeSel.value }),
+        signal: controller.signal
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || 'Request failed (' + res.status + ')');
+      }
+      const reader = res.body.getReader();
+      const dec = new TextDecoder();
+      let buf = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        let nl;
+        while ((nl = buf.indexOf('\n')) >= 0) {
+          const line = buf.slice(0, nl).trim();
+          buf = buf.slice(nl + 1);
+          let ev = null;
+          try { ev = JSON.parse(line); } catch (e) { /* skip a broken line */ }
+          if (ev) handle(ev);
+        }
+      }
+    } catch (e) {
+      if (e.name === 'AbortError') {
+        stopped = true;
+      } else {
+        failed = true;
+        errText = e.message;
+      }
+    }
+
+    body.classList.remove('dots');
+    // a stream that ends without the "done" marker was cut off (server restarted, network dropped...)
+    if (!failed && !stopped && !gotDone) {
+      failed = true;
+      errText = 'The connection was interrupted before the answer finished.';
+    }
+    const finish = (list) => list.forEach((p) => {
+      if (p.type === 'tool' && p.result == null) p.result = '(stopped)';
+      if (p.type === 'stage') {
+        if (p.status === 'running') { p.status = 'stopped'; p.open = false; }
+        finish(p.items);
+      }
+    });
+    if (failed) {
+      finish(parts);
+      renderParts(body, parts, '', true);  // keep everything that was done before the error
+      const box = document.createElement('div');
+      box.className = 'error-box';
+      const msg = document.createElement('div');
+      msg.textContent = errText;
+      const retry = document.createElement('button');
+      retry.type = 'button';
+      retry.className = 'ghost';
+      retry.textContent = 'Retry';
+      retry.onclick = () => {
+        if (busy) return;
+        const failedMsg = body.parentElement;
+        const userMsg = failedMsg.previousElementSibling;
+        failedMsg.remove();
+        if (userMsg) userMsg.remove();
+        attach = att;
+        showPreview();
+        ask(text);
+      };
+      box.append(msg, retry);
+      body.appendChild(box);
+      history.pop();
+      shown.pop();
+    } else if (stopped && !parts.length) {
+      body.parentElement.remove();
+      history.pop();
+      shown.pop();
+    } else {
+      finish(parts);
+      renderParts(body, parts, '', true);
+      history.push({ role: 'assistant', content: answerText() || '(used tools)' });
+      shown.push({ role: 'assistant', parts });
+      persist();
+    }
+
+    controller = null;
+    setBusy(false);
+    input.focus();
+  }
+
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    if (busy) {
+      if (controller) controller.abort();
+      return;
+    }
+    const text = input.value;
+    input.value = '';
+    input.style.height = 'auto';
+    ask(text);
+  });
+
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      if (!busy) form.requestSubmit();
+    }
+  });
+
+  input.addEventListener('input', () => {
+    input.style.height = 'auto';
+    input.style.height = input.scrollHeight + 'px';
+  });
+
+  document.querySelectorAll('.chip').forEach((c) =>
+    c.addEventListener('click', () => {
+      if (c.dataset.mode) setMode(c.dataset.mode);
+      input.value = c.dataset.fill || c.textContent;  // fill the box so you can finish the sentence
+      input.style.height = 'auto';
+      input.style.height = input.scrollHeight + 'px';
+      input.focus();
+      input.setSelectionRange(input.value.length, input.value.length);
+    })
+  );
+
+  document.getElementById('new').addEventListener('click', newChat);
+  document.getElementById('newHead').addEventListener('click', newChat);
+  document.getElementById('libToggle').addEventListener('click', () =>
+    document.body.classList.toggle('lib-closed')
+  );
+
+  renderLibrary();
+</script>
+</body>
+</html>
