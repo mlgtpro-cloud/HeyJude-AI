@@ -3,13 +3,15 @@ import json
 import os
 from io import BytesIO
 
+import requests
+
 from dotenv import load_dotenv
 from flask import Flask, Response, render_template, request, stream_with_context
 
 load_dotenv()
 
 from agent_core import run_agent  # noqa: E402  (imported after load_dotenv so .env settings apply)
-from tools import TOOLS  # noqa: E402
+from tools import TOOLS, fetch_webpage, web_search  # noqa: E402
 from multi_agent import run_multi  # noqa: E402
 from router import route  # noqa: E402
 
@@ -176,7 +178,27 @@ def chat():
             app.logger.exception("chat request failed")
             yield to_line({"t": "error", "d": f"[Server error] {e}"})
 
-    return Response(stream_with_context(generate()), mimetype="application/x-ndjson")
+    return Response(stream_with_context(generate()), mimetype="application/x-ndjson",
+                    headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+@app.get("/api/selftest")
+def selftest():
+    """Open /api/selftest on your website to see what works there. It never shows your keys."""
+    out = {"api_key_set": bool(API_KEY), "base_url": BASE_URL, "model": MODEL, "multi_model": MULTI_MODEL,
+           "router_model": ROUTER_MODEL, "fallback_model": FALLBACK_MODEL}
+    try:  # one tiny model call
+        r = requests.post(f"{BASE_URL}/chat/completions", timeout=40,
+                          headers={"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"},
+                          json={"model": MODEL, "messages": [{"role": "user", "content": "Say ok"}], "max_tokens": 16})
+        out["model_call"] = "ok" if r.status_code == 200 else f"FAILED {r.status_code}: {r.text[:200]}"
+    except requests.RequestException as e:
+        out["model_call"] = f"FAILED: {e}"
+    found = web_search("python programming", 1)
+    out["web_search"] = "ok" if found.startswith("1.") else f"FAILED: {found[:200]}"
+    page = fetch_webpage("https://example.com")
+    out["page_reader"] = "ok" if "Example Domain" in page else f"FAILED: {page[:200]}"
+    return out
 
 
 @app.post("/api/extract")
